@@ -691,10 +691,7 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
         macro_chip = Chip(name)
         macro_chip.read_manifest(f'{build_job_dir}/{name}.pkg.json')
 
-        # Set LEF/GDS and ingest the library into the top-level schema.
-        stackup = macro_chip.get('asic', 'stackup')
-        macro_chip.set('model', 'layout', 'lef', stackup, f'{build_job_dir}/export/0/inputs/{name}.lef')
-        macro_chip.set('model', 'layout', 'gds', stackup, f'{build_job_dir}/export/0/outputs/{name}.gds')
+        # Ingest the library into the top-level schema.
         self.add('asic', 'macrolib', name)
         self.import_library(macro_chip)
 
