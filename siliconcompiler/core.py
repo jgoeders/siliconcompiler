@@ -675,6 +675,48 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
         else:
             self.error(f'Checklist module {name} not found in $SCPATH or siliconcompiler/checklists/.')
 
+    #########################################################################
+    def load_macro(self, name, build_job_dir):
+        """
+        Helper method to Load information about a hard macro from a completed SC build.
+
+        Ideally this would accept a name and look in SC search paths like the other load_ methods,
+        but I think this method will probably be mooted soon, when we start to import IP blocks
+        as Python modules.
+
+        If this makes it into a pull request, TODO: better error checking.
+        """
+
+        # Create a Chip object for the macro lib, and read the completed manifest.
+        macro_chip = Chip(name)
+        macro_chip.read_manifest(f'{build_job_dir}/{name}.pkg.json')
+
+        # Set LEF/GDS and ingest the library into the top-level schema.
+        stackup = macro_chip.get('asic', 'stackup')
+        macro_chip.set('model', 'layout', 'lef', stackup, f'{build_job_dir}/export/0/inputs/{name}.lef')
+        macro_chip.set('model', 'layout', 'gds', stackup, f'{build_job_dir}/export/0/outputs/{name}.gds')
+        self.add('asic', 'macrolib', name)
+        self.import_library(macro_chip)
+
+    #########################################################################
+    def place_macro(self, instance_name, macro_name, xy_tuple, rotation='R0'):
+        """
+        Specify fixed placement for a hard macro block in the design.
+        Accepts X/Y coordinates, and rotation.
+        """
+
+        loaded_macros = self.get('asic', 'macrolib')
+        if (macro_name not in loaded_macros):
+            self.logger.warning(f'({instance_name}): Cannot place macro of type "{macro_name}", because it has not been loaded.')
+            return
+        elif ():
+            self.logger.warning(f'({instance_name}): This macro has already been placed. Overwriting previous location/rotation.')
+
+        # For now, use the catch-all 'var' schema parameter.
+        # I'll propose adding two new params under 'asic', and see what people think.
+        self.set('asic', 'var', f'macroplace_{instance_name}', 'location', [str(xy_tuple[0]), str(xy_tuple[1])])
+        self.set('asic', 'var', f'macroplace_{instance_name}', 'rotation', rotation)
+
     ###########################################################################
     def list_metrics(self):
         '''
