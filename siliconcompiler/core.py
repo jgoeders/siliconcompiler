@@ -676,26 +676,6 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
             self.error(f'Checklist module {name} not found in $SCPATH or siliconcompiler/checklists/.')
 
     #########################################################################
-    def load_macro(self, name, build_job_dir):
-        """
-        Helper method to Load information about a hard macro from a completed SC build.
-
-        Ideally this would accept a name and look in SC search paths like the other load_ methods,
-        but I think this method will probably be mooted soon, when we start to import IP blocks
-        as Python modules.
-
-        If this makes it into a pull request, TODO: better error checking.
-        """
-
-        # Create a Chip object for the macro lib, and read the completed manifest.
-        macro_chip = Chip(name)
-        macro_chip.read_manifest(f'{build_job_dir}/{name}.pkg.json')
-
-        # Ingest the library into the top-level schema.
-        self.add('asic', 'macrolib', name)
-        self.import_library(macro_chip)
-
-    #########################################################################
     def place_macro(self, instance_name, macro_name, xy_tuple, rotation='R0'):
         """
         Specify fixed placement for a hard macro block in the design.
