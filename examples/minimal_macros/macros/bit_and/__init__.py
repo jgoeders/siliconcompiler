@@ -12,12 +12,19 @@ def build():
     # Configure a Chip object for the 1-bit and gate.
     and_chip = siliconcompiler.Chip(macro_top)
     and_chip.set('input', 'verilog', 'src/and.v')
-    and_chip.set('input', 'sdc', 'src/and.sdc')
-    and_chip.load_target('freepdk45_demo')
-    and_chip.set('asic', 'diearea', [(0.0, 0.0), (7.0, 7.0)])
-    and_chip.set('asic', 'corearea', [(1.0, 1.0), (6.0, 6.0)])
+    #and_chip.set('input', 'sdc', 'src/and.sdc')
+    #and_chip.load_target('freepdk45_demo')
+    and_chip.load_target('skywater130_demo')
+    #and_chip.set('asic', 'diearea', [(0.0, 0.0), (7.0, 7.0)])
+    #and_chip.set('asic', 'corearea', [(1.0, 1.0), (6.0, 6.0)])
+    and_chip.set('asic', 'diearea', [(0.0, 0.0), (30.0, 30.0)])
+    and_chip.set('asic', 'corearea', [(1.0, 2.72), (29.0, 27.28)])
     and_chip.set('tool', 'openroad', 'var', 'place', '0', 'place_density', ['0.6'])
     and_chip.set('option', 'quiet', True)
+
+    # Sky130: Only route on met1-met3, to leave room for a power grid.
+    stackup = and_chip.get('asic', 'stackup')
+    and_chip.set('asic', 'maxlayer', 'met3')
 
     # Build and print a summary
     and_chip.run()
