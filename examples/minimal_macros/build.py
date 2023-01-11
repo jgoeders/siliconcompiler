@@ -1,6 +1,12 @@
 from macros import bit_and, bit_or
 import os
+import shutil
 import siliconcompiler
+
+# Path resolution supporting env var separators.
+# TODO: Move to schema or change how Chip._resolve_env_vars() works
+def scpath_resolve(pth):
+    return shutil.which(pth, mode = os.R_OK, path = os.environ['SCPATH'])
 
 def main():
     # Configure a Chip object for the top-level design.
@@ -18,10 +24,6 @@ def main():
     andor_chip.set('tool', 'openroad', 'var', 'place', '0', 'place_density', ['0.6'])
     andor_chip.set('tool', 'openroad', 'var', 'route', '0', 'grt_allow_congestion', ['true'])
 
-    # Build the macro designs. (Optional if already done)
-    bit_and.build()
-    bit_or.build()
-
     # Add the macro package directories to the search path.
     new_scpath = os.environ['SCPATH'].split(os.pathsep) if 'SCPATH' in os.environ else []
     new_scpath.append(os.path.abspath("macros/bit_or/pkg/"))
@@ -29,14 +31,19 @@ def main():
     os.environ['SCPATH'] = os.pathsep.join(new_scpath)
 
     # Import the macros.
-    # TODO: Find a way to integrate '[macro].setup()' with existing 'setup_[tool|lib|pdk]' methodology,
-    # to automate these calls and delay their execution until later in the flow (for remote/etc).
-    bit_and.setup(andor_chip)
-    bit_or.setup(andor_chip)
+    # TODO: Remove reliance on 'scpath_resolve' workaround
+    andor_chip.add('asic', 'macrolib', 'bit_or')
+    #andor_chip.add('input', 'rtl', 'verilog', scpath_resolve('or.bb.v'))
+    andor_chip.add('input', 'verilog', scpath_resolve('or.bb.v'))
+    andor_chip.use(bit_or)
+    andor_chip.add('asic', 'macrolib', 'bit_and')
+    #andor_chip.add('input', 'rtl', 'verilog', scpath_resolve('and.bb.v'))
+    andor_chip.add('input', 'verilog', scpath_resolve('and.bb.v'))
+    andor_chip.use(bit_and)
 
     # Place the macros.
-    andor_chip.place_macro('and_macro', 'bit_and', (1.5, 2.72), 'R0')
-    andor_chip.place_macro('or_macro', 'bit_or', (35.5, 35.36), 'R0')
+    andor_chip.place_macro('and_macro', 'bit_and', (1.5, 2.72), 0)
+    andor_chip.place_macro('or_macro', 'bit_or', (35.5, 35.36), 0)
 
     # Build the top-level design.
     andor_chip.run()

@@ -676,7 +676,7 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
             self.error(f'Checklist module {name} not found in $SCPATH or siliconcompiler/checklists/.')
 
     #########################################################################
-    def place_macro(self, instance_name, macro_name, xy_tuple, rotation='R0'):
+    def place_macro(self, instance_name, macro_name, xy_tuple, rotation=0.0):
         """
         Specify fixed placement for a hard macro block in the design.
         Accepts X/Y coordinates, and rotation.
@@ -691,8 +691,8 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
 
         # For now, use the catch-all 'var' schema parameter.
         # I'll propose adding two new params under 'asic', and see what people think.
-        self.set('asic', 'var', f'macroplace_{instance_name}', 'location', [str(xy_tuple[0]), str(xy_tuple[1])])
-        self.set('asic', 'var', f'macroplace_{instance_name}', 'rotation', rotation)
+        self.set('constraint', 'component', instance_name, 'placement', (xy_tuple[0], xy_tuple[1], 0.0))
+        self.set('constraint', 'component', instance_name, 'rotation', rotation)
 
     ##########################################################################
     def use(self, module):

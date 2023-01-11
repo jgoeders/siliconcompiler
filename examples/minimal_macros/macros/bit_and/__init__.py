@@ -4,7 +4,12 @@ import siliconcompiler
 
 macro_top = 'bit_and'
 
-def build():
+# Smart path resolution supporting env var separators.
+# TODO: Move to schema or change how Chip._resolve_env_vars() works?
+def scpath_resolve(pth):
+    return shutil.which(pth, mode = os.R_OK, path = os.environ['SCPATH'])
+
+def setup():
     # Move into the macro directory to build/package the design.
     cur_dir = os.getcwd()
     os.chdir(os.path.dirname(__file__))
@@ -41,22 +46,14 @@ def build():
     # TODO: Include blackbox as unused file during first build?
     shutil.copy2(f'{build_job_dir}/../../../src/and.bb.v', f'{pkg_dir}/and.bb.v')
 
+    # Create a library schema from the macro build artifacts.
+    stackup = and_chip.get('asic', 'stackup')
+    #and_chip.set('output', 'macro', 'lef', scpath_resolve('bit_and.lef'))
+    #and_chip.set('output', 'macro', 'gds', scpath_resolve('bit_and.gds'))
+    and_chip.set('model', 'layout', 'lef', stackup, scpath_resolve('bit_and.lef'))
+    and_chip.set('model', 'layout', 'gds', stackup, scpath_resolve('bit_and.gds'))
+
     # Return to previous working directory.
     os.chdir(cur_dir)
 
-# Smart path resolution supporting env var separators.
-# TODO: Move to schema or change how Chip._resolve_env_vars() works?
-def scpath_resolve(pth):
-    return shutil.which(pth, mode = os.R_OK, path = os.environ['SCPATH'])
-
-def setup(top_chip):
-    # Create a library schema from the macro build artifacts.
-    macro_chip = siliconcompiler.Chip(macro_top)
-    macro_chip.read_manifest(scpath_resolve(f'{macro_top}.pkg.json'))
-    stackup = macro_chip.get('asic', 'stackup')
-    macro_chip.set('model', 'layout', 'lef', stackup, scpath_resolve('bit_and.lef'))
-    macro_chip.set('model', 'layout', 'gds', stackup, scpath_resolve('bit_and.gds'))
-
-    top_chip.add('asic', 'macrolib', macro_top)
-    top_chip.import_library(macro_chip)
-    top_chip.add('input', 'verilog', scpath_resolve('and.bb.v'))
+    return and_chip

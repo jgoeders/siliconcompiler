@@ -68,16 +68,14 @@ if {[expr ! [dict exists $sc_cfg "input" "floorplan.def"]]} {
 
     # Set macro placements specified in the schema early, so that the following automatic
     # floorplanning commands will not move them.
-    if [dict exists $sc_cfg asic var] {
-        dict for {key value} [dict get $sc_cfg asic var] {
-            set mp_len [string length macroplace_]
-            set mp_pre [string range $key 0 $mp_len-1]
-            set mp_post [string range $key $mp_len end]
-            if [string equal $mp_pre macroplace_] {
-                set macro_loc [dict get $sc_cfg asic var $key location]
-                set macro_rot [dict get $sc_cfg asic var $key rotation]
-                place_cell -inst_name $mp_post -origin $macro_loc -orient $macro_rot -status FIRM
-            }
+    if [dict exists $sc_cfg constraint component] {
+        dict for {key value} [dict get $sc_cfg constraint component] {
+            set macro_loc [dict get $sc_cfg constraint component $key placement]
+            # TODO: Currently in degrees, this may need to change to a str for R0/etc?
+            set macro_rot R[expr int([dict get $sc_cfg constraint component $key rotation])]
+            set macro_pos [list [lindex $macro_loc 0] [lindex $macro_loc 1]]
+            puts $macro_pos
+            place_cell -inst_name $key -origin $macro_pos -orient $macro_rot -status FIRM
         }
     }
 
