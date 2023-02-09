@@ -20,7 +20,6 @@ def setup(chip):
     option = "-no_init -gui"
 
     chip.add('tool', tool, 'task', task, 'output', step, index, design + '.png')
-    chip.set('tool', tool, 'task', task, 'var', step, index, 'show_vertical_resolution', '1024', clobber=False)
 
     chip.set('tool', tool, 'task', task, 'var', step, index, 'show_exit', "true", clobber=False)
     if chip.valid('tool', tool, 'task', task, 'var', step, index, 'show_filepath'):

@@ -228,7 +228,8 @@ def setup(chip, mode='batch'):
                             ('sta_early_timing_derate', '0.0'),
                             ('sta_late_timing_derate', '0.0'),
                             ('fin_add_fill', 'true'),
-                            ('psm_enable', 'true')
+                            ('psm_enable', 'true'),
+                            ('show_vertical_resolution', '1024'),
                             ]:
         chip.set('tool', tool, 'task', task, 'var', step, index, variable, value, clobber=False)
 
