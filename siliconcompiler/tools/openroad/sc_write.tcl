@@ -10,4 +10,6 @@ write_verilog -include_pwr_gnd "outputs/${sc_design}.vg"
 ###########################
 # Automated post-task design screenshot.
 ###########################
-gui::show "source $sc_refdir/sc_screenshot.tcl" false
+if {[info exists ::env(DISPLAY)] || [dict get $sc_cfg option nodisplay]} {
+    gui::show "source $sc_refdir/sc_screenshot.tcl" false
+}
