@@ -107,6 +107,10 @@ def setup(chip, mode='batch'):
     if chip.get('option', 'nodisplay'):
         # Tells QT to use the offscreen platform if nodisplay is used
         chip.set('tool', tool, 'task', task, 'env', step, index, 'QT_QPA_PLATFORM', 'offscreen')
+        # If no X11 runtime dir is set, give it a scratch directory to use.
+        # The system will do this automatically, but it will print a warning when it does.
+        if not 'XDG_RUNTIME_DIR' in os.environ:
+            chip.set('tool', tool, 'task', task, 'env', step, index, 'XDG_RUNTIME_DIR', chip._getworkdir(step=step, index=index))
 
     if delaymodel != 'nldm':
         chip.logger.error(f'{delaymodel} delay model is not supported by {tool}, only nldm')
