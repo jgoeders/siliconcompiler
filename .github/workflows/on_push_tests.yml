@@ -15,6 +15,7 @@ jobs:
           echo $VIRTUAL_ENV
           pip3 install -r $GITHUB_WORKSPACE/requirements.txt $GITHUB_WORKSPACE/.
           export QT_QPA_PLATFORM="offscreen"
+          export XDG_RUNTIME_DIR="/tmp/runtime-ci"
           pytest -n 4 --import-mode=append -m "eda and quick"
 
   python_test_job:
