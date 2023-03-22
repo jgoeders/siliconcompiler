@@ -116,7 +116,7 @@ if {$openroad_drt_process_node != "false"} {
   lappend openroad_drt_arguments "-repair_pdn_vias" $openroad_drt_repair_pdn_vias
 }
 
-detailed_route -save_guide_updates \
+detailed_route \
   -output_drc "reports/${sc_design}_drc.rpt" \
   -output_maze "reports/${sc_design}_maze.log" \
   -bottom_routing_layer $sc_minmetal \
