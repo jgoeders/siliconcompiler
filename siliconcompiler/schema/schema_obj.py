@@ -733,6 +733,10 @@ class Schema:
             if 'default' not in key:
                 fout.write(outstr)
 
+        manifest_footer = os.path.join(PACKAGE_ROOT, 'data', 'sc_manifest_footer.tcl')
+        with open(manifest_footer, 'r') as f:
+            fout.write(f.read())
+        fout.write('\n')
 
     ###########################################################################
     def write_csv(self, fout):
