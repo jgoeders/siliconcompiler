@@ -151,6 +151,7 @@ def _deferstep(chip, step, index, status):
             break
         else:
             # FAILED, etc.
+            chip.logger.error(f'No recognized state: {jobout}')
             retcode = 1
             break
 
