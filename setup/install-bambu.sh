@@ -6,13 +6,13 @@ set -e
 src_path=$(cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P)
 
 sudo apt-get install -y autoconf autoconf-archive automake libtool g++ \
-    gcc-7 g++-7 gcc-8 g++-8 gcc-7-plugin-dev  gcc-8-plugin-dev gcc-7-multilib \
-    gcc-8-multilib g++-7-multilib g++-8-multilib gfortran-7 gfortran-7-multilib \
-    gfortran-8 gfortran-8-multilib libclang-6.0-dev clang-6.0 libclang-6.0-dev \
-    clang-7 libclang-7-dev libbdd-dev libboost-all-dev libmpc-dev libmpfr-dev \
+    libbdd-dev libboost-all-dev libmpc-dev libmpfr-dev \
     libxml2-dev liblzma-dev libmpfi-dev zlib1g-dev libicu-dev bison doxygen flex \
     graphviz iverilog verilator make libsuitesparse-dev libglpk-dev libgmp-dev \
     libfl-dev
+sudo apt-get install -y gcc-9 g++-9 gcc-10 g++-10 gcc-9-plugin-dev gcc-10-plugin-dev \
+    gcc-9-multilib gcc-10-multilib g++-9-multilib g++-10-multilib gfortran-9 gfortran-9-multilib \
+    gfortran-10 gfortran-10-multilib libclang-11-dev clang-11 clang-12 libclang-12-dev
 
 mkdir -p deps
 cd deps
