@@ -24,7 +24,6 @@ INACTIVE_TOGGLE_COLOR = "#D3D3D3"
 ACTIVE_TOGGLE_COLOR = "#11567f"
 TRACK_TOGGLE_COLOR = "#29B5E8"
 
-
 sc_logo_path = \
     os.path.join(os.path.dirname(__file__), '..', 'data', 'logo.png')
 
@@ -235,24 +234,7 @@ def show_file_viewer(chip, step, index, header_col_width=0.89):
             streamlit.markdown('Cannot read file')
 
 
-def show_files(chip, step, index):
-    """
-    Displays the logs and reports using streamlit_tree_select.
-
-    Args:
-        chip (Chip) : the chip object that contains the schema read from.
-        step (string) : step of node.
-        index (string) : index of node.
-    """
-    streamlit.caption('files')
-
-    logs_and_reports = report.get_files(chip, step, index)
-    logs_and_reports = _convert_filepaths(logs_and_reports)
-
-    if logs_and_reports == []:
-        streamlit.markdown('No files to show')
-        return False
-
+def show_files_helper(logs_and_reports, expand_all=False):
     # kinda janky at the moment, does not always flip immediately
     # TODO make so that selection changes on first click
     if "selected" not in streamlit.session_state:
@@ -264,7 +246,8 @@ def show_files(chip, step, index):
                            expand_on_click=True,
                            checked=streamlit.session_state['selected'],
                            expanded=streamlit.session_state['expanded'],
-                           only_leaf_checkboxes=True)
+                           only_leaf_checkboxes=True,
+                           show_expand_all=expand_all)
     # only include files in 'checked' (folders are also included when they
     # are opened)
     selected['checked'] = [x for x in selected['checked'] if os.path.isfile(x)]
@@ -282,6 +265,38 @@ def show_files(chip, step, index):
         streamlit.session_state['expanded'] = selected["expanded"]
         streamlit.session_state['right after rerun'] = True
         streamlit.experimental_rerun()
+
+
+def show_files(chip, step, index, category):
+    """
+    Displays the logs and reports using streamlit_tree_select.
+
+    Args:
+        chip (Chip) : the chip object that contains the schema read from.
+        step (string) : step of node.
+        index (string) : index of node.
+    """
+    streamlit.caption('files')
+
+    logs_and_reports = report.get_files(chip, step, index)
+    logs_and_reports = _convert_filepaths(logs_and_reports)
+
+    if logs_and_reports == []:
+        streamlit.markdown('No files to show')
+        return False
+
+    filtered_up_logs_and_reports = []
+    filtered_down_logs_and_reports = []
+    for log_or_report in logs_and_reports:
+        if log_or_report['value'] in category['files']:
+            filtered_up_logs_and_reports.append(log_or_report)
+        else:
+            filtered_down_logs_and_reports.append(log_or_report)
+
+    print(filtered_up_logs_and_reports)
+    show_files_helper(filtered_up_logs_and_reports, expand_all=True)
+    streamlit.markdown('middle')
+    show_files_helper(filtered_down_logs_and_reports)
 
     if streamlit.session_state.selected != []:
         return True
@@ -337,7 +352,7 @@ def show_manifest(manifest, max_num_of_keys_to_show=20):
     streamlit.json(manifest, expanded=(numOfKeys < max_num_of_keys_to_show))
 
 
-def select_nodes(metric_dataframe, node_from_flowgraph):
+def select_nodes(metric_dataframe, node_from_flowgraph, category):
     """
     Displays selectbox for nodes to show in the node information panel. Since
     both the flowgraph and selectbox show which node's information is
@@ -348,13 +363,21 @@ def select_nodes(metric_dataframe, node_from_flowgraph):
             nodes.
         node_from_flowgraph (string/None) : Contains a string of the node to
             display or None if none exists.
+        category (dict) : Contains the user selected configuration for the user
+            selected category.
     """
     option = metric_dataframe.columns.tolist()[0]
 
     with streamlit.expander("Select Node"):
         with streamlit.form("nodes"):
+            if len(category['nodes']) > 0:
+                # use the first node as the configuration
+                index = metric_dataframe.columns.tolist().index(category['nodes'][0])
+            else:
+                index = 0
             option = streamlit.selectbox('Pick a node to inspect',
-                                         metric_dataframe.columns.tolist())
+                                         metric_dataframe.columns.tolist(),
+                                         index)
 
             params_submitted = streamlit.form_submit_button("Run")
             if not params_submitted and node_from_flowgraph is not None:
@@ -365,7 +388,7 @@ def select_nodes(metric_dataframe, node_from_flowgraph):
     return option
 
 
-def show_dataframe_and_parameter_selection(metric_dataframe):
+def show_dataframe_and_parameter_selection(metric_dataframe, category):
     """
     Displays multi-select check box to the users which allows them to select
     which nodes and metrics to view in the dataframe.
@@ -373,6 +396,8 @@ def show_dataframe_and_parameter_selection(metric_dataframe):
     Args:
         metric_dataframe (Pandas.DataFrame) : Contains the metrics of all
             nodes.
+        category (dict) : Contains the user selected configuration for the user
+            selected category.
     """
     container = streamlit.container()
 
@@ -394,19 +419,19 @@ def show_dataframe_and_parameter_selection(metric_dataframe):
         display_to_data[metric] = metric_unit
         display_options.append(metric)
 
-    options = {'metrics': [], 'nodes': []}
+    options = {'metrics': category['metrics'], 'nodes': category['nodes']}
 
     # pick parameters
     with streamlit.expander("Select Parameters"):
         with streamlit.form("params"):
             nodes = streamlit.multiselect('Pick nodes to include',
                                           node_list,
-                                          [])
+                                          category['nodes'])
             options['nodes'] = nodes
 
             metrics = streamlit.multiselect('Pick metrics to include?',
                                             display_options,
-                                            [])
+                                            category['metrics'])
             options['metrics'] = []
             for metric in metrics:
                 options['metrics'].append(display_to_data[metric])
@@ -561,7 +586,7 @@ def dont_show_flowgraph(flowgraph_col_width=0.1):
     return None, metrics_and_nodes_info_col
 
 
-def show_title_and_runs(title_col_width=0.7):
+def show_title_and_runs(configuration, title_col_width=0.7):
     """
     Displays the title and a selectbox that allows you to select a given run
     to inspect.
@@ -571,13 +596,13 @@ def show_title_and_runs(title_col_width=0.7):
             the percentage of the width of the screen given to the title and
             logo. The rest is given to selectbox.
     """
-    title_col, job_select_col = \
+    title_col, job_and_config_select_col = \
         streamlit.columns([title_col_width, 1 - title_col_width], gap="large")
 
     with title_col:
         streamlit.title(f'{new_chip.design} dashboard', anchor=False)
 
-    with job_select_col:
+    with job_and_config_select_col:
         all_jobs = streamlit.session_state['master chip'].getkeys('history')
         all_jobs.insert(0, 'default')
         job = streamlit.selectbox(' ', all_jobs)
@@ -587,33 +612,45 @@ def show_title_and_runs(title_col_width=0.7):
             streamlit.session_state['right after rerun'] = True
             streamlit.experimental_rerun()
 
-    return new_chip
+
+        metric_dataframe = report.make_metric_dataframe(new_chip)
+        # create mapping between task and step, index
+        node_to_step_index_map = {}
+        for step, index in metric_dataframe.columns.tolist():
+            node_to_step_index_map[step + index] = (step, index)
+        # concatenate step and index
+        metric_dataframe.columns = metric_dataframe.columns.map(lambda x:
+                                                                f'{x[0]}{x[1]}')
+
+        # create mapping between metric concatenated with unit and just the metric
+        metric_to_metric_unit_map = {}
+        for metric, unit in metric_dataframe.index.tolist():
+            if unit != '':
+                metric_to_metric_unit_map[f'{metric} ({unit})'] = metric
+            else:
+                metric_to_metric_unit_map[metric] = metric
+        # concatenate metric and unit
+        metric_dataframe.index = metric_dataframe.index.map(lambda x:
+                                                            f'{x[0]} ({x[1]})'
+                                                            if x[1] else x[0])
+
+        configuration = report.config_validate_and_reformat(set(metric_dataframe.columns),
+                                                            set(metric_dataframe.index),
+                                                            report.get_all_files(new_chip),
+                                                            configuration)
+        config_category = streamlit.selectbox('Select a category', configuration.keys())
+        category = configuration[config_category]
+
+    return (new_chip, category, configuration, metric_dataframe,
+            node_to_step_index_map, metric_to_metric_unit_map)
 
 
-new_chip = show_title_and_runs()
+# ingestion
+configuration = json.load(open(os.path.join('..', '..', '..',
+                                            'junkTesting', 'configuration.json')))
 
-# gathering data
-metric_dataframe = report.make_metric_dataframe(new_chip)
-
-# create mapping between task and step, index
-node_to_step_index_map = {}
-for step, index in metric_dataframe.columns.tolist():
-    node_to_step_index_map[step + index] = (step, index)
-# concatenate step and index
-metric_dataframe.columns = metric_dataframe.columns.map(lambda x:
-                                                        f'{x[0]}{x[1]}')
-
-# create mapping between metric concatenated with unit and just the metric
-metric_to_metric_unit_map = {}
-for metric, unit in metric_dataframe.index.tolist():
-    if unit != '':
-        metric_to_metric_unit_map[f'{metric} ({unit})'] = metric
-    else:
-        metric_to_metric_unit_map[metric] = metric
-# concatenate metric and unit
-metric_dataframe.index = metric_dataframe.index.map(lambda x:
-                                                    f'{x[0]} ({x[1]})'
-                                                    if x[1] else x[0])
+(new_chip, category, configuration, metric_dataframe, node_to_step_index_map,
+ metric_to_metric_unit_map) = show_title_and_runs(configuration)
 
 nodes, edges = get_nodes_and_edges(new_chip,
                                    report.get_flowgraph_edges(new_chip),
@@ -665,14 +702,14 @@ with metrics_tab:
     with datafram_and_node_info_col:
         show_dataframe_header()
 
-        show_dataframe_and_parameter_selection(metric_dataframe)
+        show_dataframe_and_parameter_selection(metric_dataframe, category)
 
         streamlit.header('Node Information')
 
         metrics_col, records_col, logs_and_reports_col = \
             streamlit.columns(3, gap='small')
 
-        option = select_nodes(metric_dataframe, node_from_flowgraph)
+        option = select_nodes(metric_dataframe, node_from_flowgraph, category)
 
         with metrics_col:
             streamlit.dataframe(metric_dataframe[option].dropna(),
@@ -690,7 +727,7 @@ with metrics_tab:
 
         with logs_and_reports_col:
             step, index = node_to_step_index_map[option]
-            display_file_content = show_files(new_chip, step, index)
+            display_file_content = show_files(new_chip, step, index, category)
             show_metrics_for_file(new_chip, step, index)
 
 with manifest_tab:

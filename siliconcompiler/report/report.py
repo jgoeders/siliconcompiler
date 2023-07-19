@@ -1,5 +1,6 @@
 import pandas
 import os
+import fnmatch
 from siliconcompiler import Schema
 from siliconcompiler.report import utils
 
@@ -303,3 +304,51 @@ def get_files(chip, step, index):
                                  set(folders),
                                  set(files)))
     return logs_and_reports
+
+
+def get_all_files(chip):
+    '''
+    This function returns all files in a build.
+    '''
+    all_paths = set()
+    for path_name, folders, files in os.walk(chip._getworkdir()):
+        for file in files:
+            all_paths.add(os.path.join(path_name, file))
+    return all_paths
+
+
+def config_validate_and_reformat(node_set, metric_set, file_set,
+                                 configuration):
+    '''
+    '''
+    reformatted_configuration = {}
+    for config_category in configuration:
+        reformatted_configuration[config_category] = {}
+        reformatted_category = reformatted_configuration[config_category]
+        category = configuration[config_category]
+
+        no_duplicates = set()
+        reformatted_category['nodes'] = []
+        for node in category['nodes']:
+            for matching_node in fnmatch.filter(node_set, node):
+                if matching_node not in no_duplicates:
+                    reformatted_category['nodes'].append(matching_node)
+                    no_duplicates.add(matching_node)
+
+        no_duplicates = set()
+        reformatted_category['metrics'] = []
+        for metric in category['metrics']:
+            if metric in metric_set:
+                reformatted_category['metrics'].append(metric)
+
+        no_duplicates = set()
+        reformatted_category['files'] = []
+        for file in category['files']:
+            # files might have a strange prefix, so I am slightly modifying the
+            # user inputs
+            for matching_file in fnmatch.filter(file_set, f'*{file}'):
+                if matching_file not in no_duplicates:
+                    reformatted_category['files'].append(matching_file)
+                    no_duplicates.add(matching_file)
+
+    return reformatted_configuration
