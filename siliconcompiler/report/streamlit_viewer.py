@@ -234,7 +234,7 @@ def show_file_viewer(chip, step, index, header_col_width=0.89):
             streamlit.markdown('Cannot read file')
 
 
-def show_files_helper(logs_and_reports, expand_all=False):
+def create_file_tree(logs_and_reports, expand_all=False):
     # kinda janky at the moment, does not always flip immediately
     # TODO make so that selection changes on first click
     if "selected" not in streamlit.session_state:
@@ -267,6 +267,22 @@ def show_files_helper(logs_and_reports, expand_all=False):
         streamlit.experimental_rerun()
 
 
+def show_files_helper(logs_and_reports, category, is_in=True):
+    filtered_logs_and_reports = []
+    for log_or_report in logs_and_reports:
+        for file in category['files']:
+            if (log_or_report['value'] == file) == is_in:
+                filtered_logs_and_reports.append({'label': log_or_report['label']})
+                filtered_logs_and_reports.append({'value': log_or_report['value']})
+            elif (log_or_report['value'] in file) == is_in:
+                filtered_logs_and_reports.append({'label': log_or_report['label']})
+                filtered_logs_and_reports.append({'value': log_or_report['value']})
+                filtered_logs_and_reports.append({'children':
+                                                  show_files_helper(log_or_report['children'],
+                                                                    category, is_in=is_in)})
+    return filtered_logs_and_reports
+
+
 def show_files(chip, step, index, category):
     """
     Displays the logs and reports using streamlit_tree_select.
@@ -281,22 +297,20 @@ def show_files(chip, step, index, category):
     logs_and_reports = report.get_files(chip, step, index)
     logs_and_reports = _convert_filepaths(logs_and_reports)
 
+    # converting the structure to what tree_select expects
+    filtered_up_logs_and_reports = show_files_helper(logs_and_reports, category)
+    filtered_down_logs_and_reports = show_files_helper(logs_and_reports, category, is_in=False)
+    print('\n\n\n\n')
+    print(filtered_up_logs_and_reports)
+
     if logs_and_reports == []:
         streamlit.markdown('No files to show')
         return False
 
-    filtered_up_logs_and_reports = []
-    filtered_down_logs_and_reports = []
-    for log_or_report in logs_and_reports:
-        if log_or_report['value'] in category['files']:
-            filtered_up_logs_and_reports.append(log_or_report)
-        else:
-            filtered_down_logs_and_reports.append(log_or_report)
-
-    print(filtered_up_logs_and_reports)
-    show_files_helper(filtered_up_logs_and_reports, expand_all=True)
+    create_file_tree(logs_and_reports)
+    create_file_tree(filtered_up_logs_and_reports, expand_all=True)
     streamlit.markdown('middle')
-    show_files_helper(filtered_down_logs_and_reports)
+    create_file_tree(filtered_down_logs_and_reports)
 
     if streamlit.session_state.selected != []:
         return True
