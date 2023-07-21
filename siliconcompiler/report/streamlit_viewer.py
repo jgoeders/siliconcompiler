@@ -234,20 +234,20 @@ def show_file_viewer(chip, step, index, header_col_width=0.89):
             streamlit.markdown('Cannot read file')
 
 
-def create_file_tree(logs_and_reports, expand_all=False):
+def create_file_tree(logs_and_reports, default_expanded=[]):
     # kinda janky at the moment, does not always flip immediately
     # TODO make so that selection changes on first click
     if "selected" not in streamlit.session_state:
         streamlit.session_state['selected'] = []
     if "expanded" not in streamlit.session_state:
-        streamlit.session_state['expanded'] = []
+        streamlit.session_state['expanded'] = default_expanded
 
     selected = tree_select(logs_and_reports,
                            expand_on_click=True,
                            checked=streamlit.session_state['selected'],
                            expanded=streamlit.session_state['expanded'],
                            only_leaf_checkboxes=True,
-                           show_expand_all=expand_all)
+                           show_expand_all=True)
     # only include files in 'checked' (folders are also included when they
     # are opened)
     selected['checked'] = [x for x in selected['checked'] if os.path.isfile(x)]
@@ -267,20 +267,40 @@ def create_file_tree(logs_and_reports, expand_all=False):
         streamlit.experimental_rerun()
 
 
-def show_files_helper(logs_and_reports, category, is_in=True):
-    filtered_logs_and_reports = []
+def show_files_helper(logs_and_reports, category):
+    filtered_up_logs_and_reports = []
+    filtered_down_logs_and_reports = []
     for log_or_report in logs_and_reports:
+        is_in_filtered_up_subfolder = False
+        # log_or_report_to_include = {'label': log_or_report['label'],
+        #                             'value': log_or_report['value']}
+        filtered_up_log_or_report_to_include = {'label': log_or_report['label'],
+                                                'value': log_or_report['value']}
+        filtered_down_log_or_report_to_include = {'label': log_or_report['label'],
+                                                  'value': log_or_report['value']}
+        is_in_filtered_down_subfolder = os.path.isfile(log_or_report['value'])
         for file in category['files']:
-            if (log_or_report['value'] == file) == is_in:
-                filtered_logs_and_reports.append({'label': log_or_report['label']})
-                filtered_logs_and_reports.append({'value': log_or_report['value']})
-            elif (log_or_report['value'] in file) == is_in:
-                filtered_logs_and_reports.append({'label': log_or_report['label']})
-                filtered_logs_and_reports.append({'value': log_or_report['value']})
-                filtered_logs_and_reports.append({'children':
-                                                  show_files_helper(log_or_report['children'],
-                                                                    category, is_in=is_in)})
-    return filtered_logs_and_reports
+            if log_or_report['value'] == file:
+                filtered_up_logs_and_reports.append(filtered_up_log_or_report_to_include)
+                is_in_filtered_down_subfolder = False
+            elif log_or_report['value'] in file:
+                is_in_filtered_up_subfolder = True
+
+        if os.path.isdir(log_or_report['value']): # works
+            (filtered_up_log_or_report_to_include['children'],
+             filtered_down_log_or_report_to_include['children']) = \
+                show_files_helper(log_or_report['children'], category)
+
+        if is_in_filtered_up_subfolder:
+            filtered_up_logs_and_reports.append(filtered_up_log_or_report_to_include)
+
+        append_to_filtered_down = \
+            ('children' in filtered_down_log_or_report_to_include and
+             filtered_down_log_or_report_to_include['children']) \
+             or is_in_filtered_down_subfolder
+        if append_to_filtered_down:
+            filtered_down_logs_and_reports.append(filtered_down_log_or_report_to_include)
+    return filtered_up_logs_and_reports, filtered_down_logs_and_reports
 
 
 def show_files(chip, step, index, category):
@@ -298,21 +318,23 @@ def show_files(chip, step, index, category):
     logs_and_reports = _convert_filepaths(logs_and_reports)
 
     # converting the structure to what tree_select expects
-    filtered_up_logs_and_reports = show_files_helper(logs_and_reports, category)
-    filtered_down_logs_and_reports = show_files_helper(logs_and_reports, category, is_in=False)
-    print('\n\n\n\n')
-    print(filtered_up_logs_and_reports)
+    filtered_up_logs_and_reports, filtered_down_logs_and_reports = \
+        show_files_helper(logs_and_reports, category)
 
-    if logs_and_reports == []:
+    if not logs_and_reports:
         streamlit.markdown('No files to show')
         return False
+    elif filtered_up_logs_and_reports and not filtered_down_logs_and_reports:
+        create_file_tree(filtered_up_logs_and_reports,
+                         default_expanded=filtered_up_logs_and_reports)
+    elif filtered_up_logs_and_reports:
+        create_file_tree(filtered_up_logs_and_reports,
+                         default_expanded=filtered_up_logs_and_reports)
+        create_file_tree(filtered_down_logs_and_reports)
+    else:
+        create_file_tree(filtered_down_logs_and_reports)
 
-    create_file_tree(logs_and_reports)
-    create_file_tree(filtered_up_logs_and_reports, expand_all=True)
-    streamlit.markdown('middle')
-    create_file_tree(filtered_down_logs_and_reports)
-
-    if streamlit.session_state.selected != []:
+    if streamlit.session_state.selected:
         return True
     return False
 
@@ -625,7 +647,6 @@ def show_title_and_runs(configuration, title_col_width=0.7):
         if previous_job != job:
             streamlit.session_state['right after rerun'] = True
             streamlit.experimental_rerun()
-
 
         metric_dataframe = report.make_metric_dataframe(new_chip)
         # create mapping between task and step, index
