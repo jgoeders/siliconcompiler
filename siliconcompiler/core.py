@@ -239,6 +239,17 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
 
         return tasks
 
+    def _get_task_input_files(self, step, index, flow=None):
+        if not flow:
+            flow = self.get('option', 'flow')
+
+        files = set()
+        for in_step, in_index in self.get('flowgraph', flow, step, index, 'input'):
+            in_tool, in_task = self._get_tool_task(in_step, in_index, flow=flow)
+            files.update(self.get('tool', in_tool, 'task', in_task, 'output', step=in_step, index=in_index))
+
+        return list(files)
+
     ###########################################################################
     def _init_logger(self, step=None, index=None, in_run=False):
 

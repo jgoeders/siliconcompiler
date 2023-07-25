@@ -37,22 +37,27 @@ set sc_pdk         [dict get $sc_cfg option pdk]
 # If UHDM, ilang, or Verilog inputs exist, read them in (this allows mixed
 # inputs in designs). UHDM requires a version of Yosys built with this support.
 
-if { [file exists "inputs/$sc_design.uhdm"] } {
-    set input_uhdm "inputs/$sc_design.uhdm"
-    yosys read_uhdm $input_uhdm
-}
-if { [file exists "inputs/$sc_design.ilang"] } {
-    set input_ilang "inputs/$sc_design.ilang"
-    yosys read_ilang $input_ilang
+set read_verilog_args [list "-sv"]
+if {$sc_task eq "syn_vpr"} {
+    #TODO: the nolatches option can be a flag set by the user depending on the input arch file
+    lappend read_verilog_args "-nolatches"
 }
 
-if { [file exists "inputs/$sc_design.v"] } {
-    set input_verilog "inputs/$sc_design.v"
-    if {$sc_step eq "syn_vpr"} {
-        #TODO: the nolatches option can be a flag set by the user depending on the input arch file
-        yosys read_verilog -sv -nolatches $input_verilog
-    } else {
-        yosys read_verilog -sv $input_verilog
+if { [file exists "inputs/$sc_design.uhdm"] } {
+    yosys read_uhdm "inputs/$sc_design.uhdm"
+} elseif { [file exists "inputs/$sc_design.ilang"] } {
+    yosys read_ilang "inputs/$sc_design.ilang"
+} elseif { [file exists "inputs/$sc_design.v"] } {
+    yosys read_verilog {*}$read_verilog_args "inputs/$sc_design.v"
+} else {
+    foreach idir [dict get $sc_cfg option idir] {
+        lappend read_verilog_args "-I${idir}"
+    }
+    foreach def [dict get $sc_cfg option define] {
+        lappend read_verilog_args "-D${def}"
+    }
+    foreach vfile [dict get $sc_cfg input rtl verilog] {
+        yosys read_verilog -defer {*}$read_verilog_args $vfile
     }
 }
 
@@ -69,6 +74,8 @@ if {[dict exists $sc_cfg option param]} {
 	yosys chparam -set $key $value $sc_design
    }
 }
+
+yosys hierarchy -check -top $sc_design
 
 ########################################################
 # Synthesis based on mode

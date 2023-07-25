@@ -90,7 +90,10 @@ def syn_setup(chip):
              step=step, index=index, clobber=False)
 
     # Input/output requirements.
-    chip.set('tool', tool, 'task', task, 'input', design + '.v', step=step, index=index)
+    if f'{design}.v' in chip._get_task_input_files(step, index):
+        chip.set('tool', tool, 'task', task, 'input', design + '.v', step=step, index=index)
+    else:
+        chip.add('tool', tool, 'task', task, 'require', 'input,rtl,verilog', step=step, index=index)
     chip.set('tool', tool, 'task', task, 'output', design + '.vg', step=step, index=index)
 
 
