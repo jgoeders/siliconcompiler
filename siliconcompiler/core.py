@@ -246,7 +246,8 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
         files = set()
         for in_step, in_index in self.get('flowgraph', flow, step, index, 'input'):
             in_tool, in_task = self._get_tool_task(in_step, in_index, flow=flow)
-            files.update(self.get('tool', in_tool, 'task', in_task, 'output', step=in_step, index=in_index))
+            files.update(self.get('tool', in_tool, 'task', in_task, 'output',
+                                  step=in_step, index=in_index))
 
         return list(files)
 

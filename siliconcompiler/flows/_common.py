@@ -15,7 +15,9 @@ def setup_frontend(chip):
     frontend = chip.get('option', 'frontend')
     frontend_flow = []
 
-    if frontend in ('verilog', 'systemverilog'):
+    if frontend == 'verilog':
+        pass
+    elif frontend == 'systemverilog':
         frontend_flow.append(('import', surelog_parse))
     elif frontend == 'chisel':
         frontend_flow.append(('import', chisel_convert))
