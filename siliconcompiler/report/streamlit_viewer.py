@@ -1,9 +1,9 @@
 import streamlit
 from streamlit_agraph import agraph, Node, Edge, Config
-from streamlit_tree_select import tree_select
 import streamlit_javascript
 from PIL import Image
 from pathlib import Path
+from flask import Flask, render_template
 import os
 import argparse
 import json
@@ -237,41 +237,29 @@ def show_files(chip, step, index):
         index (string) : index of node.
     """
     streamlit.caption('files')
-    logs_and_reports = report.get_files(chip, step, index)
-    logs_and_reports = _convert_filepaths(logs_and_reports)
-    if logs_and_reports == []:
-        streamlit.markdown('No files to show')
-        return False
+    app = Flask(__name__)
 
-    # kinda janky at the moment, does not always flip immediately
-    # TODO make so that selection changes on first click
-    if "selected" not in streamlit.session_state:
-        streamlit.session_state['selected'] = []
-    if "expanded" not in streamlit.session_state:
-        streamlit.session_state['expanded'] = []
+    def recurse(data):
+        restructured_data = {}
+        for folder_or_file in data:
+            if 'children' in folder_or_file:
+                folder = folder_or_file
+                value = folder['label']
+                restructured_data[value] = recurse(folder_or_file['children'])
+            else:
+                file = folder_or_file
+                value = file['label']
+                restructured_data[value] = 'LEAF'
+        return restructured_data
 
-    selected = tree_select(logs_and_reports,
-                           expand_on_click=True,
-                           checked=streamlit.session_state['selected'],
-                           expanded=streamlit.session_state['expanded'],
-                           only_leaf_checkboxes=True)
-    # only include files in 'checked' (folders are also included when they are opened)
-    selected['checked'] = [x for x in selected['checked'] if os.path.isfile(x)]
-    if len(selected['checked']) == 0:
-        streamlit.session_state['selected'] = []
-    if len(selected["checked"]) == 1:
-        streamlit.session_state['selected'] = selected["checked"]
-    if len(selected["checked"]) > 1:
-        for x in selected["checked"]:
-            if x != streamlit.session_state['selected'][0]:
-                newly_selected = x
-                break
-        streamlit.session_state['selected'] = [newly_selected]
-        streamlit.session_state['expanded'] = selected["expanded"]
-        streamlit.session_state['right after rerun'] = True
-        streamlit.experimental_rerun()
-    if streamlit.session_state.selected != []:
-        return True
+    @app.route('/')
+    def index():
+        data = _convert_filepaths(report.get_files(chip, step, index))
+        data = recurse(data)
+        return render_template('index.html', name=data)
+
+    if __name__ == "__main__":
+        app.run(debug=False)
     return False
 
 
@@ -731,7 +719,9 @@ if layout == 'vertical_flowgraph':
             with records_col:
                 node_details_dataframe(new_chip, step, index)
             with logs_and_reports_col:
+                print('\n\n\n\n\n')
                 display_file_content = show_files(new_chip, step, index)
+                streamlit.components.v1.iframe('http://127.0.0.1:5000/')
                 show_metrics_for_file(new_chip, step, index)
     with manifest_tab:
         manifest_module(new_chip, manifest, ui_width)
