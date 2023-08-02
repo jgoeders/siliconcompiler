@@ -3,7 +3,7 @@ from streamlit_agraph import agraph, Node, Edge, Config
 import streamlit_javascript
 from PIL import Image
 from pathlib import Path
-from flask import Flask, render_template
+from flask import Flask, render_template, request, jsonify
 import os
 import argparse
 import json
@@ -252,14 +252,23 @@ def show_files(chip, step, index):
                 restructured_data[value] = 'LEAF'
         return restructured_data
 
-    @app.route('/')
+    @app.route('/', methods=['GET', 'POST'])
     def index():
-        data = _convert_filepaths(report.get_files(chip, step, index))
-        data = recurse(data)
-        return render_template('index.html', name=data)
+        if request.method == 'POST':
+            data = request.get_json()
+            filename = data.get('filename')
+            # Do something with the file name, e.g., process it or save it to a database
+            print(f"Received file name: {filename}")
+            # Prepare a response data (optional)
+            response_data = {'message': f'Successfully received file name: {filename}'}
+            return jsonify(response_data)
+        else:
+            data = _convert_filepaths(report.get_files(chip, step, index))
+            data = recurse(data)
+            return render_template('index.html', name=data)
 
     if __name__ == "__main__":
-        app.run(debug=False)
+        app.run(debug=True)
     return False
 
 
@@ -721,7 +730,6 @@ if layout == 'vertical_flowgraph':
             with logs_and_reports_col:
                 print('\n\n\n\n\n')
                 display_file_content = show_files(new_chip, step, index)
-                streamlit.components.v1.iframe('http://127.0.0.1:5000/')
                 show_metrics_for_file(new_chip, step, index)
     with manifest_tab:
         manifest_module(new_chip, manifest, ui_width)

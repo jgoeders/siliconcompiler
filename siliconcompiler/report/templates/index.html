@@ -1,10 +1,11 @@
+ <!-- credit: https://codepen.io/danilonovakovic/pen/bxmWVM  -->
 <!DOCTYPE html>
 <html lang="en" >
 <head>
   <meta charset="UTF-8">
   <title>CodePen - Directory Tree Viewer (Vanilla JS)</title>
   <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css'>
-<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/material-design-iconic-font/2.2.0/css/material-design-iconic-font.min.css'><link rel="stylesheet" href="./style.css">
+<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/material-design-iconic-font/2.2.0/css/material-design-iconic-font.min.css'><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
 </head>
 <body>
@@ -16,8 +17,7 @@
   </div>
 </div>
 <!-- partial -->
-  <script>
-  const data = {{ name | tojson }};
+  <script>  
   /* shorthand functions (createElement is defined at bottom)*/
   const div = (props, ...children) => createElement("div", props, ...children);
   const ul = (props, ...children) => createElement("ul", props, ...children);
@@ -35,8 +35,36 @@
   /* File */
   
   const File = ({ name }) => {
+    // Function to handle the click event on the file
+    const handleClick = () => {
+      // Replace this with the action you want to perform when the file is clicked
+      // Send the file name to the Flask backend using fetch API
+      fetch("/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ filename: name }),
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          // Parse the response JSON data
+          return response.json();
+        })
+        .then(data => {
+          // Access the JSON data returned from the Flask server
+          console.log("Server response:", data);
+        })
+        .catch(error => {
+          // Handle any errors that occurred during the fetch request
+          console.error("Error sending request:", error);
+        });
+    };
+
     return div(
-      { className: "file" },
+      { className: "file", onClick: handleClick }, // Add onClick event listener
       i({ className: "material-icons", style: "opacity: 0;" }, "arrow_right"),
       i({ className: "material-icons" }, "insert_drive_file"),
       span(null, name)
@@ -101,29 +129,10 @@
       ul({ className: opened ? "" : "hide" }, ...children)
     );
   };
-  
-  /* TreeView */
-  function TreeStructure(data) {
-    let restructured_data = [];
-    for (let key of Object.keys(data)) {
-      if ("LEAF" === data[key]) { 
-        /* file */
-        restructured_data.push(File({ name: key }));
-      } else { 
-        /* folder */
-        let sub_dir = TreeStructure(data[key]);
-        if (sub_dir.length === 0) { // Check if the array is empty
-          restructured_data.push(Folder({ name: key }));
-        } else {
-          restructured_data.push(Folder({ name: key }, ...sub_dir)); // Use spread operator to add elements to the Folder
-        }
-      }
-    }
-    return restructured_data;
-  }
 
+  /* TreeView */
   const TreeView = () => {
-    return section({ className: "container" }, ...TreeStructure(data)); // Use spread operator to add elements to the section
+    return section({ className: "container" }, File({ name: "import.errors" }), File({ name: "import.log" }), File({ name: "import.warnings" }), Folder({ name: "inputs" }, File({ name: "gcd.pkg.json" })), Folder({ name: "outputs" }, File({ name: "gcd.pkg.json" }), File({ name: "gcd.v" })), File({ name: "replay.sh" }), Folder({ name: "reports" }, ), Folder({ name: "slpp_all" }, File({ name: "file.lst" }), File({ name: "file_elab.lst" }), File({ name: "file_map.lst" }), Folder({ name: "lib" }, Folder({ name: "work" }, File({ name: "gcd.v" }))), File({ name: "surelog.log" })));
   };
   
   const app = document.querySelector("#treeView");
