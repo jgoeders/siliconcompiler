@@ -290,7 +290,7 @@ def show_files_helper(logs_and_reports, category):
             elif log_or_report['value'] in file:
                 is_in_filtered_up_subfolder = True
 
-        if os.path.isdir(log_or_report['value']): # works
+        if os.path.isdir(log_or_report['value']):
             (filtered_up_log_or_report_to_include['children'],
              filtered_down_log_or_report_to_include['children']) = \
                 show_files_helper(log_or_report['children'], category)
@@ -300,8 +300,7 @@ def show_files_helper(logs_and_reports, category):
 
         append_to_filtered_down = \
             ('children' in filtered_down_log_or_report_to_include and
-             filtered_down_log_or_report_to_include['children']) \
-             or is_in_filtered_down_subfolder
+             filtered_down_log_or_report_to_include['children']) or is_in_filtered_down_subfolder
         if append_to_filtered_down:
             filtered_down_logs_and_reports.append(filtered_down_log_or_report_to_include)
     return filtered_up_logs_and_reports, filtered_down_logs_and_reports
