@@ -3854,6 +3854,268 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
         self.set('arg', 'step', None)
         self.set('arg', 'index', None)
 
+    def __remote_process(self, steplist):
+        # Load the remote storage config into the status dictionary.
+        if self.get('option', 'credentials'):
+            # Use the provided remote credentials file.
+            cfg_file = os.path.abspath(self.get('option', 'credentials'))
+
+            if not os.path.isfile(cfg_file):
+                # Check if it's a file since its been requested by the user
+                self.error(f'Unable to find the credentials file: {cfg_file}', fatal=True)
+        else:
+            # Use the default config file path.
+            cfg_file = utils.default_credentials_file()
+
+        cfg_dir = os.path.dirname(cfg_file)
+        if os.path.isdir(cfg_dir) and os.path.isfile(cfg_file):
+            self.logger.info(f'Using credentials: {cfg_file}')
+            with open(cfg_file, 'r') as cfgf:
+                self.status['remote_cfg'] = json.loads(cfgf.read())
+        else:
+            self.logger.warning('Could not find remote server configuration: '
+                                f'defaulting to {_metadata.default_server}')
+            self.status['remote_cfg'] = {
+                "address": _metadata.default_server
+            }
+        if ('address' not in self.status['remote_cfg']):
+            self.error('Improperly formatted remote server configuration - '
+                        'please run "sc-configure" and enter your server address and '
+                        'credentials.', fatal=True)
+
+        # Pre-process: Run an starting nodes locally, and upload the
+        # in-progress build directory to the remote server.
+        # Data is encrypted if user / key were specified.
+        # run remote process
+        if self.get('arg', 'step'):
+            self.error('Cannot pass "-step" parameter into remote flow.',
+                        fatal=True)
+        cur_steplist = self.get('option', 'steplist')
+        pre_remote_steplist = {
+            'steplist': cur_steplist,
+            'set': self.schema._is_set(self.schema._search('option', 'steplist')),
+        }
+        remote_preprocess(self, steplist)
+
+        # Run the job on the remote server, and wait for it to finish.
+        # Set logger to indicate remote run
+        self._init_logger(step='remote', index='0', in_run=True)
+        remote_run(self)
+
+        # Delete the job's data from the server.
+        delete_job(self)
+        # Restore logger
+        self._init_logger(in_run=True)
+        # Restore steplist
+        if pre_remote_steplist['set']:
+            self.set('option', 'steplist', pre_remote_steplist['steplist'])
+
+    def __local_process(self, flow, status, steplist, indexlist):
+        # Populate status dict with any flowgraph status values that have already
+        # been set.
+        for step in self.getkeys('flowgraph', flow):
+            for index in self.getkeys('flowgraph', flow, step):
+                stepstr = step + index
+                task_status = self.get('flowgraph', flow, step, index, 'status')
+                if task_status is not None:
+                    status[step + index] = task_status
+                else:
+                    status[step + index] = TaskStatus.PENDING
+
+        # Setup tools for all tasks to run.
+        for step in steplist:
+            for index in indexlist[step]:
+                # Setting up tool is optional
+                self._setup_task(step, index)
+
+        # Check validity of setup
+        self.logger.info("Checking manifest before running.")
+        check_ok = True
+        if not self.get('option', 'skipcheck'):
+            check_ok = self.check_manifest()
+
+        # Check if there were errors before proceeding with run
+        if not check_ok:
+            self.error('Manifest check failed. See previous errors.', fatal=True)
+        if self._error:
+            self.error('Implementation errors encountered. See previous errors.', fatal=True)
+
+        # For each task to run, prepare a process and store its dependencies
+        jobname = self.get('option', 'jobname')
+        tasks_to_run = {}
+        processes = {}
+        # Ensure we use spawn for multiprocessing so loggers initialized correctly
+        multiprocessor = multiprocessing.get_context('spawn')
+        for step in steplist:
+            for index in indexlist[step]:
+                nodename = f'{step}{index}'
+                if status[nodename] != TaskStatus.PENDING:
+                    continue
+
+                node_inputs = self.get('flowgraph', flow, step, index, 'input')
+                inputs = [f'{step}{index}' for step, index in node_inputs]
+
+                if (self._get_in_job(step, index) != jobname):
+                    # If we specify a different job as input to this task,
+                    # we assume we are good to run it.
+                    tasks_to_run[nodename] = []
+                else:
+                    tasks_to_run[nodename] = inputs
+
+                processes[nodename] = multiprocessor.Process(target=self._runtask,
+                                                                args=(step, index, status))
+
+        running_tasks = []
+        while len(tasks_to_run) > 0 or len(running_tasks) > 0:
+            # Check for new tasks that can be launched.
+            for task, deps in list(tasks_to_run.items()):
+                # TODO: breakpoint logic:
+                # if task is breakpoint, then don't launch while len(running_tasks) > 0
+
+                # Clear any tasks that have finished from dependency list.
+                for in_task in deps.copy():
+                    if status[in_task] != TaskStatus.PENDING:
+                        deps.remove(in_task)
+
+                # If there are no dependencies left, launch this task and
+                # remove from tasks_to_run.
+                if len(deps) == 0:
+                    processes[task].start()
+                    running_tasks.append(task)
+                    del tasks_to_run[task]
+
+            # Check for situation where we have stuff left to run but don't
+            # have any tasks running. This shouldn't happen, but we will get
+            # stuck in an infinite loop if it does, so we want to break out
+            # with an explicit error.
+            if len(tasks_to_run) > 0 and len(running_tasks) == 0:
+                self.error('Tasks left to run, but no '
+                            'running tasks. Steplist may be invalid.', fatal=True)
+
+            # Check for completed tasks.
+            # TODO: consider staying in this section of loop until a task
+            # actually completes.
+            for task in running_tasks.copy():
+                if not processes[task].is_alive():
+                    running_tasks.remove(task)
+                    if processes[task].exitcode > 0:
+                        status[task] = TaskStatus.ERROR
+                    else:
+                        status[task] = TaskStatus.SUCCESS
+
+            # TODO: exponential back-off with max?
+            time.sleep(0.1)
+
+        # Make a clean exit if one of the steps failed
+        for step in steplist:
+            index_succeeded = False
+            for index in indexlist[step]:
+                stepstr = step + index
+                if status[stepstr] != TaskStatus.ERROR:
+                    index_succeeded = True
+                    break
+
+            if not index_succeeded:
+                self.error('Run() failed, see previous errors.', fatal=True)
+
+        # On success, write out status dict to flowgraph status. We do this
+        # since certain scenarios won't be caught by reading in manifests (a
+        # failing step doesn't dump a manifest). For example, if the
+        # steplist's final step has two indices and one fails.
+        for step in steplist:
+            for index in indexlist[step]:
+                stepstr = step + index
+                if status[stepstr] != TaskStatus.PENDING:
+                    self.set('flowgraph', flow, step, index, 'status', status[stepstr])
+
+    def __resume_steps(self, flow, steplist, indexlist):
+        # Reset flowgraph/records/metrics by probing build directory. We need
+        # to set values to None for steps we may re-run so that merging
+        # manifests from _runtask() actually updates values.
+        should_resume = self.get("option", 'resume')
+        for step in self.getkeys('flowgraph', flow):
+            all_indices_failed = True
+            for index in self.getkeys('flowgraph', flow, step):
+                stepdir = self._getworkdir(step=step, index=index)
+                cfg = f"{stepdir}/outputs/{self.get('design')}.pkg.json"
+
+                in_steplist = step in steplist and index in indexlist[step]
+                if not os.path.isdir(stepdir) or (in_steplist and not should_resume):
+                    # If stepdir doesn't exist, we need to re-run this task. If
+                    # we're not running with -resume, we also re-run anything
+                    # in the steplist.
+                    self.set('flowgraph', flow, step, index, 'status', None)
+
+                    # Reset metrics and records
+                    for metric in self.getkeys('metric'):
+                        self._clear_metric(step, index, metric)
+                    for record in self.getkeys('record'):
+                        self.unset('record', record, step=step, index=index)
+                elif os.path.isfile(cfg):
+                    self.set('flowgraph', flow, step, index, 'status', TaskStatus.SUCCESS)
+                    all_indices_failed = False
+                else:
+                    self.set('flowgraph', flow, step, index, 'status', TaskStatus.ERROR)
+
+            if should_resume and all_indices_failed and step in steplist:
+                # When running with -resume, we re-run any step in steplist that
+                # had all indices fail.
+                for index in self.getkeys('flowgraph', flow, step):
+                    if index in indexlist[step]:
+                        self.set('flowgraph', flow, step, index, 'status', None)
+                        for metric in self.getkeys('metric'):
+                            self._clear_metric(step, index, metric)
+                        for record in self.getkeys('record'):
+                            self.unset('record', record, step=step, index=index)
+
+    def __increment_jobs(self):
+        # Auto-update jobname if ['option', 'jobincr'] is True
+        # Do this before initializing logger so that it picks up correct jobname
+        if self.get('option', 'jobincr'):
+            workdir = self._getworkdir()
+            if os.path.isdir(workdir):
+                # Strip off digits following jobname, if any
+                stem = self.get('option', 'jobname').rstrip('0123456789')
+
+                designdir = os.path.dirname(workdir)
+                jobid = 0
+                for job in os.listdir(designdir):
+                    m = re.match(stem + r'(\d+)', job)
+                    if m:
+                        jobid = max(jobid, int(m.group(1)))
+                self.set('option', 'jobname', f'{stem}{jobid + 1}')
+
+    def __filter_steplist(self):
+        # Run steps if set, otherwise run whole graph
+        if self.get('arg', 'step'):
+            steplist = [self.get('arg', 'step')]
+        elif self.get('option', 'steplist'):
+            steplist = self.get('option', 'steplist')
+        else:
+            steplist = self.list_steps()
+
+            if not self.get('option', 'resume'):
+                # If no step(list) was specified, the whole flow is being run
+                # start-to-finish. Delete the build dir to clear stale results.
+                cur_job_dir = self._getworkdir()
+                if os.path.isdir(cur_job_dir):
+                    shutil.rmtree(cur_job_dir)
+        return steplist
+
+    def __precompute_indexlist(self, steplist, flow):
+        # List of indices to run per step. Precomputing this ensures we won't
+        # have any problems if [arg, index] gets clobbered, and reduces logic
+        # repetition.
+        indexlist = {}
+        for step in steplist:
+            if self.get('arg', 'index'):
+                indexlist[step] = [self.get('arg', 'index')]
+            elif self.get('option', 'indexlist'):
+                indexlist[step] = self.get("option", 'indexlist')
+            else:
+                indexlist[step] = self.getkeys('flowgraph', flow, step)
+        return indexlist
+
     ###########################################################################
     def __finalize_run(self, steplist, environment, status={}):
         '''
@@ -3951,21 +4213,7 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
                 self.error(f"{key} must be set before calling run()",
                            fatal=True)
 
-        # Auto-update jobname if ['option', 'jobincr'] is True
-        # Do this before initializing logger so that it picks up correct jobname
-        if self.get('option', 'jobincr'):
-            workdir = self._getworkdir()
-            if os.path.isdir(workdir):
-                # Strip off digits following jobname, if any
-                stem = self.get('option', 'jobname').rstrip('0123456789')
-
-                designdir = os.path.dirname(workdir)
-                jobid = 0
-                for job in os.listdir(designdir):
-                    m = re.match(stem + r'(\d+)', job)
-                    if m:
-                        jobid = max(jobid, int(m.group(1)))
-                self.set('option', 'jobname', f'{stem}{jobid + 1}')
+        self.__increment_jobs()
 
         # Re-init logger to include run info after setting up flowgraph.
         self._init_logger(in_run=True)
@@ -3976,71 +4224,11 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
             self.error(f"{flow} flowgraph contains errors and cannot be run.",
                        fatal=True)
 
-        # Run steps if set, otherwise run whole graph
-        if self.get('arg', 'step'):
-            steplist = [self.get('arg', 'step')]
-        elif self.get('option', 'steplist'):
-            steplist = self.get('option', 'steplist')
-        else:
-            steplist = self.list_steps()
+        steplist = self.__filter_steplist()
 
-            if not self.get('option', 'resume'):
-                # If no step(list) was specified, the whole flow is being run
-                # start-to-finish. Delete the build dir to clear stale results.
-                cur_job_dir = self._getworkdir()
-                if os.path.isdir(cur_job_dir):
-                    shutil.rmtree(cur_job_dir)
+        indexlist = self.__precompute_indexlist(steplist, flow)
 
-        # List of indices to run per step. Precomputing this ensures we won't
-        # have any problems if [arg, index] gets clobbered, and reduces logic
-        # repetition.
-        indexlist = {}
-        for step in steplist:
-            if self.get('arg', 'index'):
-                indexlist[step] = [self.get('arg', 'index')]
-            elif self.get('option', 'indexlist'):
-                indexlist[step] = self.get("option", 'indexlist')
-            else:
-                indexlist[step] = self.getkeys('flowgraph', flow, step)
-
-        # Reset flowgraph/records/metrics by probing build directory. We need
-        # to set values to None for steps we may re-run so that merging
-        # manifests from _runtask() actually updates values.
-        should_resume = self.get("option", 'resume')
-        for step in self.getkeys('flowgraph', flow):
-            all_indices_failed = True
-            for index in self.getkeys('flowgraph', flow, step):
-                stepdir = self._getworkdir(step=step, index=index)
-                cfg = f"{stepdir}/outputs/{self.get('design')}.pkg.json"
-
-                in_steplist = step in steplist and index in indexlist[step]
-                if not os.path.isdir(stepdir) or (in_steplist and not should_resume):
-                    # If stepdir doesn't exist, we need to re-run this task. If
-                    # we're not running with -resume, we also re-run anything
-                    # in the steplist.
-                    self.set('flowgraph', flow, step, index, 'status', None)
-
-                    # Reset metrics and records
-                    for metric in self.getkeys('metric'):
-                        self._clear_metric(step, index, metric)
-                    for record in self.getkeys('record'):
-                        self.unset('record', record, step=step, index=index)
-                elif os.path.isfile(cfg):
-                    self.set('flowgraph', flow, step, index, 'status', TaskStatus.SUCCESS)
-                    all_indices_failed = False
-                else:
-                    self.set('flowgraph', flow, step, index, 'status', TaskStatus.ERROR)
-
-            if should_resume and all_indices_failed and step in steplist:
-                # When running with -resume, we re-run any step in steplist that
-                # had all indices fail.
-                for index in self.getkeys('flowgraph', flow, step):
-                    if index in indexlist[step]:
-                        self.set('flowgraph', flow, step, index, 'status', None)
-                        for metric in self.getkeys('metric'):
-                            self._clear_metric(step, index, metric)
-                        for record in self.getkeys('record'):
-                            self.unset('record', record, step=step, index=index)
+        self.__resume_steps(flow, steplist, indexlist)
 
         # Set env variables
         # Save current environment
@@ -4053,177 +4241,9 @@ If you are sure that your working directory is valid, try running `cd $(pwd)`.""
         # Remote workflow: Dispatch the Chip to a remote server for processing.
         status = {}
         if self.get('option', 'remote'):
-            # Load the remote storage config into the status dictionary.
-            if self.get('option', 'credentials'):
-                # Use the provided remote credentials file.
-                cfg_file = os.path.abspath(self.get('option', 'credentials'))
-
-                if not os.path.isfile(cfg_file):
-                    # Check if it's a file since its been requested by the user
-                    self.error(f'Unable to find the credentials file: {cfg_file}', fatal=True)
-            else:
-                # Use the default config file path.
-                cfg_file = utils.default_credentials_file()
-
-            cfg_dir = os.path.dirname(cfg_file)
-            if os.path.isdir(cfg_dir) and os.path.isfile(cfg_file):
-                self.logger.info(f'Using credentials: {cfg_file}')
-                with open(cfg_file, 'r') as cfgf:
-                    self.status['remote_cfg'] = json.loads(cfgf.read())
-            else:
-                self.logger.warning('Could not find remote server configuration: '
-                                    f'defaulting to {_metadata.default_server}')
-                self.status['remote_cfg'] = {
-                    "address": _metadata.default_server
-                }
-            if ('address' not in self.status['remote_cfg']):
-                self.error('Improperly formatted remote server configuration - '
-                           'please run "sc-configure" and enter your server address and '
-                           'credentials.', fatal=True)
-
-            # Pre-process: Run an starting nodes locally, and upload the
-            # in-progress build directory to the remote server.
-            # Data is encrypted if user / key were specified.
-            # run remote process
-            if self.get('arg', 'step'):
-                self.error('Cannot pass "-step" parameter into remote flow.',
-                           fatal=True)
-            cur_steplist = self.get('option', 'steplist')
-            pre_remote_steplist = {
-                'steplist': cur_steplist,
-                'set': self.schema._is_set(self.schema._search('option', 'steplist')),
-            }
-            remote_preprocess(self, steplist)
-
-            # Run the job on the remote server, and wait for it to finish.
-            # Set logger to indicate remote run
-            self._init_logger(step='remote', index='0', in_run=True)
-            remote_run(self)
-
-            # Delete the job's data from the server.
-            delete_job(self)
-            # Restore logger
-            self._init_logger(in_run=True)
-            # Restore steplist
-            if pre_remote_steplist['set']:
-                self.set('option', 'steplist', pre_remote_steplist['steplist'])
+            self.__remote_process(steplist)
         else:
-            # Populate status dict with any flowgraph status values that have already
-            # been set.
-            for step in self.getkeys('flowgraph', flow):
-                for index in self.getkeys('flowgraph', flow, step):
-                    stepstr = step + index
-                    task_status = self.get('flowgraph', flow, step, index, 'status')
-                    if task_status is not None:
-                        status[step + index] = task_status
-                    else:
-                        status[step + index] = TaskStatus.PENDING
-
-            # Setup tools for all tasks to run.
-            for step in steplist:
-                for index in indexlist[step]:
-                    # Setting up tool is optional
-                    self._setup_task(step, index)
-
-            # Check validity of setup
-            self.logger.info("Checking manifest before running.")
-            check_ok = True
-            if not self.get('option', 'skipcheck'):
-                check_ok = self.check_manifest()
-
-            # Check if there were errors before proceeding with run
-            if not check_ok:
-                self.error('Manifest check failed. See previous errors.', fatal=True)
-            if self._error:
-                self.error('Implementation errors encountered. See previous errors.', fatal=True)
-
-            # For each task to run, prepare a process and store its dependencies
-            jobname = self.get('option', 'jobname')
-            tasks_to_run = {}
-            processes = {}
-            # Ensure we use spawn for multiprocessing so loggers initialized correctly
-            multiprocessor = multiprocessing.get_context('spawn')
-            for step in steplist:
-                for index in indexlist[step]:
-                    nodename = f'{step}{index}'
-                    if status[nodename] != TaskStatus.PENDING:
-                        continue
-
-                    node_inputs = self.get('flowgraph', flow, step, index, 'input')
-                    inputs = [f'{step}{index}' for step, index in node_inputs]
-
-                    if (self._get_in_job(step, index) != jobname):
-                        # If we specify a different job as input to this task,
-                        # we assume we are good to run it.
-                        tasks_to_run[nodename] = []
-                    else:
-                        tasks_to_run[nodename] = inputs
-
-                    processes[nodename] = multiprocessor.Process(target=self._runtask,
-                                                                 args=(step, index, status))
-
-            running_tasks = []
-            while len(tasks_to_run) > 0 or len(running_tasks) > 0:
-                # Check for new tasks that can be launched.
-                for task, deps in list(tasks_to_run.items()):
-                    # TODO: breakpoint logic:
-                    # if task is breakpoint, then don't launch while len(running_tasks) > 0
-
-                    # Clear any tasks that have finished from dependency list.
-                    for in_task in deps.copy():
-                        if status[in_task] != TaskStatus.PENDING:
-                            deps.remove(in_task)
-
-                    # If there are no dependencies left, launch this task and
-                    # remove from tasks_to_run.
-                    if len(deps) == 0:
-                        processes[task].start()
-                        running_tasks.append(task)
-                        del tasks_to_run[task]
-
-                # Check for situation where we have stuff left to run but don't
-                # have any tasks running. This shouldn't happen, but we will get
-                # stuck in an infinite loop if it does, so we want to break out
-                # with an explicit error.
-                if len(tasks_to_run) > 0 and len(running_tasks) == 0:
-                    self.error('Tasks left to run, but no '
-                               'running tasks. Steplist may be invalid.', fatal=True)
-
-                # Check for completed tasks.
-                # TODO: consider staying in this section of loop until a task
-                # actually completes.
-                for task in running_tasks.copy():
-                    if not processes[task].is_alive():
-                        running_tasks.remove(task)
-                        if processes[task].exitcode > 0:
-                            status[task] = TaskStatus.ERROR
-                        else:
-                            status[task] = TaskStatus.SUCCESS
-
-                # TODO: exponential back-off with max?
-                time.sleep(0.1)
-
-            # Make a clean exit if one of the steps failed
-            for step in steplist:
-                index_succeeded = False
-                for index in indexlist[step]:
-                    stepstr = step + index
-                    if status[stepstr] != TaskStatus.ERROR:
-                        index_succeeded = True
-                        break
-
-                if not index_succeeded:
-                    self.error('Run() failed, see previous errors.', fatal=True)
-
-            # On success, write out status dict to flowgraph status. We do this
-            # since certain scenarios won't be caught by reading in manifests (a
-            # failing step doesn't dump a manifest). For example, if the
-            # steplist's final step has two indices and one fails.
-            for step in steplist:
-                for index in indexlist[step]:
-                    stepstr = step + index
-                    if status[stepstr] != TaskStatus.PENDING:
-                        self.set('flowgraph', flow, step, index, 'status', status[stepstr])
+            self.__local_process(flow, status, steplist, indexlist)
 
         # Merge cfgs from last executed tasks, and write out a final manifest.
         self.__finalize_run(steplist, environment, status)
