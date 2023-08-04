@@ -251,12 +251,16 @@ def create_file_tree(logs_and_reports, default_expanded=[]):
     # only include files in 'checked' (folders are also included when they
     # are opened)
     selected['checked'] = [x for x in selected['checked'] if os.path.isfile(x)]
+    # since there's two seperate file viewers, but the checked files may repeat
+    number_of_checked_files = \
+        len(set(streamlit.session_state['selected']) | set(selected['checked']))
 
-    if len(selected['checked']) == 0:
+    if number_of_checked_files == 0:
         streamlit.session_state['selected'] = []
-    if len(selected["checked"]) == 1:
-        streamlit.session_state['selected'] = selected["checked"]
-    if len(selected["checked"]) > 1:
+    elif number_of_checked_files == 1:
+        if len(selected['checked']) == 1:
+            streamlit.session_state['selected'] = selected["checked"]
+    elif number_of_checked_files > 1:
         for x in selected["checked"]:
             if x != streamlit.session_state['selected'][0]:
                 newly_selected = x
