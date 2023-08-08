@@ -20,6 +20,9 @@ SUCCESS_COLOR = '#8EA604'  # green
 PENDING_COLOR = '#F5BB00'  # yellow, could use: #EC9F05
 FAILURE_COLOR = '#FF4E00'  # red
 
+PIXELS_PER_ROW_OF_STREAMLIT_DATAFRAME = 35.1
+NODE_HEIGHT = 25
+
 sc_logo_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'logo.png')
 
 sc_font_path = \
@@ -187,6 +190,7 @@ def file_viewer_module(display_file_content, chip, step, index, header_col_width
             is given to the download button.
     """
     if not display_file_content:
+        streamlit.header('File Viewer', anchor='file_viewer')
         streamlit.error('Select a file in the metrics tab first!')
         return
     path = streamlit.session_state['selected'][0]
@@ -195,11 +199,11 @@ def file_viewer_module(display_file_content, chip, step, index, header_col_width
     # This is the true file_extension of the file, regardless of if it is
     # compressed or not.
     file_extension = utils.get_file_ext(path)
+    relative_path = os.path.relpath(path, chip._getworkdir(step=step, index=index))
     header_col, download_col = \
         streamlit.columns([header_col_width, 1 - header_col_width], gap='small')
-    relative_path = os.path.relpath(path, chip._getworkdir(step=step, index=index))
     with header_col:
-        streamlit.header(relative_path)
+        streamlit.header(relative_path, anchor='file_viewer')
     with download_col:
         streamlit.markdown(' ')  # aligns download button with title
         streamlit.download_button(label="Download file",
@@ -266,8 +270,8 @@ def show_files(chip, step, index):
         streamlit.session_state['right after rerun'] = True
         streamlit.experimental_rerun()
     if streamlit.session_state.selected != []:
-        return True
-    return False
+        return True, *streamlit.session_state['selected']
+    return False, None
 
 
 def show_metrics_for_file(chip, step, index):
@@ -317,7 +321,7 @@ def manifest_module(chip, manifest, ui_width, max_num_of_keys_to_show=20,
     header_col, download_col = streamlit.columns([header_col_width, 1 - header_col_width],
                                                  gap='small')
     with header_col:
-        streamlit.header('Manifest Tree')
+        streamlit.header('Manifest', anchor='manifest')
     if ui_width > 0:
         toggle_col_width_in_percent = \
             min(default_toggle_width_in_pixels / ui_width, default_toggle_width_in_percent)
@@ -442,7 +446,7 @@ def show_dataframe_header(header_col_width=0.7):
     header_col, transpose_col = streamlit.columns([header_col_width, 1 - header_col_width],
                                                   gap="large")
     with header_col:
-        streamlit.header('Data Metrics')
+        streamlit.header('Metrics', anchor='metrics')
     with transpose_col:
         streamlit.markdown('')
         streamlit.markdown('')
@@ -486,6 +490,84 @@ def show_flowgraph(chip):
     return node_from_flowgraph
 
 
+def show_title():
+    streamlit.markdown(
+        '''
+        <head>
+            <style>
+                /* Define the @font-face rule */
+                @font-face {
+                font-family: 'Roboto Mono';
+                src: url(sc_font_path) format('truetype');
+                font-weight: normal;
+                font-style: normal;
+                }
+
+                /* Styles for the logo and text */
+                .logo-container {
+                display: flex;
+                align-items: flex-start;
+                }
+
+                .logo-image {
+                margin-right: 10px;
+                margin-top: -10px;
+                }
+
+                .logo-text {
+                display: flex;
+                flex-direction: column;
+                margin-top: -20px;
+                }
+
+                .text1 {
+                color: #F1C437; /* Yellow color */
+                font-family: 'Roboto Mono', sans-serif;
+                font-weight: 700 !important;
+                font-size: 30px !important;
+                margin-bottom: -16px;
+                }
+
+                .text2 {
+                color: #1D4482; /* Blue color */
+                font-family: 'Roboto Mono', sans-serif;
+                font-weight: 700 !important;
+                font-size: 30px !important;
+                }
+
+            </style>
+        </head>''',
+        unsafe_allow_html=True
+    )
+    streamlit.markdown(
+        f'''
+        <body>
+            <div class="logo-container">
+                <img src="data:image/png;base64,{base64.b64encode(open(sc_logo_path,
+                "rb").read()).decode()}" alt="Logo Image" class="logo-image" height="61">
+                <div class="logo-text">
+                    <p class="text1">{streamlit.session_state['master chip'].design}</p>
+                    <p class="text2">dashboard</p>
+                </div>
+            </div>
+        </body>
+        ''',
+        unsafe_allow_html=True
+    )
+
+
+def show_runs():
+    all_jobs = streamlit.session_state['master chip'].getkeys('history')
+    all_jobs.insert(0, 'default')
+    job = streamlit.selectbox('pick a job', all_jobs,
+                                label_visibility='collapsed')
+    previous_job = streamlit.session_state['job']
+    streamlit.session_state['job'] = job
+    if previous_job != job:
+        streamlit.session_state['right after rerun'] = True
+        streamlit.experimental_rerun()
+
+
 def show_title_and_runs(title_col_width=0.7):
     """
     Displays the title and a selectbox that allows you to select a given run
@@ -499,80 +581,9 @@ def show_title_and_runs(title_col_width=0.7):
     title_col, job_select_col = \
         streamlit.columns([title_col_width, 1 - title_col_width], gap="large")
     with title_col:
-        streamlit.markdown(
-            '''
-            <head>
-                <style>
-                    /* Define the @font-face rule */
-                    @font-face {
-                    font-family: 'Roboto Mono';
-                    src: url(sc_font_path) format('truetype');
-                    font-weight: normal;
-                    font-style: normal;
-                    }
-
-                    /* Styles for the logo and text */
-                    .logo-container {
-                    display: flex;
-                    align-items: flex-start;
-                    }
-
-                    .logo-image {
-                    margin-right: 10px;
-                    margin-top: -10px;
-                    }
-
-                    .logo-text {
-                    display: flex;
-                    flex-direction: column;
-                    margin-top: -20px;
-                    }
-
-                    .text1 {
-                    color: #F1C437; /* Yellow color */
-                    font-family: 'Roboto Mono', sans-serif;
-                    font-weight: 700 !important;
-                    font-size: 30px !important;
-                    margin-bottom: -16px;
-                    }
-
-                    .text2 {
-                    color: #1D4482; /* Blue color */
-                    font-family: 'Roboto Mono', sans-serif;
-                    font-weight: 700 !important;
-                    font-size: 30px !important;
-                    }
-
-                </style>
-            </head>''',
-            unsafe_allow_html=True
-        )
-
-        streamlit.markdown(
-            f'''
-            <body>
-                <div class="logo-container">
-                    <img src="data:image/png;base64,{base64.b64encode(open(sc_logo_path,
-                    "rb").read()).decode()}" alt="Logo Image" class="logo-image" height="61">
-                    <div class="logo-text">
-                        <p class="text1">{streamlit.session_state['master chip'].design}</p>
-                        <p class="text2">dashboard</p>
-                    </div>
-                </div>
-            </body>
-            ''',
-            unsafe_allow_html=True
-        )
+        show_title()
     with job_select_col:
-        all_jobs = streamlit.session_state['master chip'].getkeys('history')
-        all_jobs.insert(0, 'default')
-        job = streamlit.selectbox('pick a job', all_jobs,
-                                  label_visibility='collapsed')
-        previous_job = streamlit.session_state['job']
-        streamlit.session_state['job'] = job
-        if previous_job != job:
-            streamlit.session_state['right after rerun'] = True
-            streamlit.experimental_rerun()
+        show_runs()
     return new_chip
 
 
@@ -752,7 +763,7 @@ def design_preview_module(chip):
     Args:
         chip (Chip) : the chip object that contains the schema read from.
     '''
-    streamlit.header('Design Preview')
+    streamlit.header('Design Preview', anchor='design_preview')
     streamlit.image(f'{chip._getworkdir()}/{chip.design}.png')
 
 
@@ -838,7 +849,7 @@ def graphs_module(metric_dataframe):
         graph_number += 1
 
 
-def make_tabs(metric_dataframe, chip):
+def select_tabs(chip):
     '''
     Creates all the tabs. Displays the modules for the tabs that may or may not exist
     which include the graphs tab and design preview tab. Returns the rest of the tabs.
@@ -847,41 +858,112 @@ def make_tabs(metric_dataframe, chip):
     '''
     if 'flowgraph' not in streamlit.session_state:
         streamlit.session_state['flowgraph'] = True
-    tabs = ["Metrics", "Manifest", "File Viewer"]
-    num_of_chips = len(streamlit.session_state['master chip'].getkeys('history'))
-    if os.path.isfile(f'{chip._getworkdir()}/{chip.design}.png') & num_of_chips > 1:
-        metrics_tab, manifest_tab, file_viewer_tab, design_preview_tab, graphs_tab = \
-            streamlit.tabs(tabs + ["Graphs", "Design Preview"])
-        with graphs_tab:
-            graphs_module(metric_dataframe)
-        with design_preview_tab:
-            design_preview_module(chip)
-    elif os.path.isfile(f'{chip._getworkdir()}/{chip.design}.png'):
-        metrics_tab, manifest_tab, file_viewer_tab, design_preview_tab = \
-            streamlit.tabs(tabs + ["Design Preview"])
-        with design_preview_tab:
-            design_preview_module(chip)
-    elif num_of_chips > 1:
-        metrics_tab, manifest_tab, file_viewer_tab, graphs_tab = streamlit.tabs(tabs + ["Graphs"])
-        with graphs_tab:
-            graphs_module(metric_dataframe)
-    else:
-        metrics_tab, manifest_tab, file_viewer_tab = streamlit.tabs(tabs)
-    return metrics_tab, manifest_tab, file_viewer_tab
+    tabs = ['Metrics', 'Manifest', 'File Viewer']
+    if os.path.isfile(f'{chip._getworkdir()}/{chip.design}.png'):
+        tabs += ["Design Preview"]
+    if len(streamlit.session_state['master chip'].getkeys('history')) > 1:
+        tabs += ["Graphs"]
+    selected_tab = streamlit.radio('tabs', tabs, label_visibility='collapsed', horizontal=True,
+                                   index=tabs.index(streamlit.session_state['selected_tab']))
+    streamlit.session_state['selected_tab'] = selected_tab
+    return selected_tab
 
 
+def flowgraph_layout_vertical_modules(chip, node_spacing=100):
+    """
+    Displays the header and toggle for the flowgraph, and the flowgraph itself.
+    This function shows the flowgraph. If the toggle is flipped, the flowgraph
+    will disappear.
+
+    Args:
+        chip (Chip) : The chip object that contains the schema read from.
+    """
+    streamlit.header('Flowgraph')
+
+    # finding the widest section of the flowgraph
+    edges = report.get_flowgraph_edges(chip)
+    not_exit_nodes = set()
+    for node in edges.keys():
+        not_exit_nodes |= edges[node]
+    exit_nodes = [node for node in edges.keys() if node not in not_exit_nodes]
+
+    def count_width_of_flowgraph(exit_nodes, levels_width=[], found=set(), level=0, edges=edges):
+        for exit_node in exit_nodes:
+            if exit_node in found:
+                continue
+            found.add(exit_node)
+            if len(levels_width) == level:
+                levels_width.append(1)
+            else:
+                levels_width[level] += 1
+            levels_width = \
+                count_width_of_flowgraph(edges[exit_node], levels_width, found, level + 1)
+        return levels_width
+
+    width = max(count_width_of_flowgraph(exit_nodes))
+
+    config = Config(width='100%', height=(width - 1) * node_spacing + NODE_HEIGHT * width,
+                    directed=True, physics=False, hierarchical=True, clickToUse=True,
+                    nodeSpacing=node_spacing, levelSeparation=175, sortMethod='directed',
+                    direction='LR')
+
+    # tree_select_edges uses the structure that tree_select accepts to show the edges
+    nodes, tree_select_edges = get_nodes_and_edges(chip, edges, report.get_flowgraph_path(chip))
+    node_from_flowgraph = agraph(nodes=nodes, edges=tree_select_edges, config=config)
+    return node_from_flowgraph
+
+
+def header_and_select_nodes(metric_dataframe, node_from_flowgraph, header_col_width=0.15):
+    """
+    Displays selectbox for nodes to show in the node information panel and the
+    header. Since both the flowgraph and selectbox show which node's information
+    is displayed, the one clicked more recently will be displayed.
+
+    Args:
+        metric_dataframe (Pandas.DataFrame) : Contains the metrics of all
+            nodes.
+        node_from_flowgraph (string/None) : Contains a string of the node to
+            display or None if none exists.
+    """
+    header_col, select_col = \
+        streamlit.columns([header_col_width, 1 - header_col_width], gap='large')
+
+    option = metric_dataframe.columns.tolist()[0]
+    with select_col:
+        streamlit.markdown('')  # to align with the header
+        with streamlit.expander("Select Node"):
+            with streamlit.form("nodes"):
+                option = streamlit.selectbox('Pick a node to inspect',
+                                             metric_dataframe.columns.tolist())
+                params_submitted = streamlit.form_submit_button("Apply")
+                if not params_submitted and node_from_flowgraph is not None:
+                    option = node_from_flowgraph
+                    streamlit.session_state['selected'] = []
+                if params_submitted:
+                    streamlit.session_state['selected'] = []
+    with header_col:
+        streamlit.header(option, anchor='node_information')
+    return option
+
+
+# setting remaining session_state
+streamlit.session_state['display_file_content'] = False
+streamlit.session_state['step'] = None
+streamlit.session_state['index'] = None
+streamlit.session_state['selected_tab'] = 'Metrics'
 # TODO find more descriptive way to describe layouts
-layout = 'vertical_flowgraph'
-new_chip = show_title_and_runs()
+layout = 'tabs_as_radio'
+layout = 'tabs_as_sections'
 # gathering data
 metric_dataframe = report.make_metric_dataframe(new_chip)
 node_to_step_index_map = make_node_to_step_index_map(metric_dataframe)
 metric_to_metric_unit_map = make_metric_to_metric_unit_map(metric_dataframe)
+ui_width = streamlit_javascript.st_javascript("window.innerWidth")
 manifest = report.make_manifest(new_chip)
-if layout == 'vertical_flowgraph':
-    metrics_tab, manifest_tab, file_viewer_tab = make_tabs(metric_dataframe, new_chip)
-    ui_width = streamlit_javascript.st_javascript("window.innerWidth")
-    with metrics_tab:
+if layout == 'tabs_as_radio':
+    new_chip = show_title_and_runs()
+    tab = select_tabs(new_chip)
+    if tab == 'Metrics':
         node_from_flowgraph, datafram_and_node_info_col = \
             flowgraph_layout_vertical_flowgraph(new_chip, ui_width)
         with datafram_and_node_info_col:
@@ -890,14 +972,54 @@ if layout == 'vertical_flowgraph':
             metrics_col, records_col, logs_and_reports_col = streamlit.columns(3, gap='small')
             selected_node = select_nodes(metric_dataframe, node_from_flowgraph)
             step, index = node_to_step_index_map[selected_node]
+            streamlit.session_state['step'] = step
+            streamlit.session_state['index'] = index
             with metrics_col:
                 node_metric_dataframe(selected_node, metric_dataframe[selected_node].dropna())
             with records_col:
                 node_details_dataframe(new_chip, step, index)
             with logs_and_reports_col:
-                display_file_content = show_files(new_chip, step, index)
+                display_file_content, selected_file = show_files(new_chip, step, index)
+                streamlit.session_state['display_file_content'] = display_file_content
+                if (streamlit.session_state['display_file_content'] and
+                   selected_file != streamlit.session_state['selected_file ']):
+                    streamlit.session_state['selected_tab'] = 'File Viewer'
                 show_metrics_for_file(new_chip, step, index)
-    with manifest_tab:
+    elif tab == 'Manifest':
         manifest_module(new_chip, manifest, ui_width)
-    with file_viewer_tab:
+    elif tab == 'File Viewer':
+        display_file_content = streamlit.session_state['display_file_content']
+        step = streamlit.session_state['step']
+        index = streamlit.session_state['index']
         file_viewer_module(display_file_content, new_chip, step, index)
+    elif tab == 'Graphs':
+        graphs_module(metric_dataframe)
+    elif tab == 'Design Preview':
+        design_preview_module(chip)
+elif layout == 'tabs_as_sections':
+    with streamlit.sidebar:
+        show_title()
+        show_runs()
+        streamlit.markdown('[Metrics](#metrics)')
+        streamlit.markdown('[Node Information](#node_information)')
+        if len(streamlit.session_state['master chip'].getkeys('history')) > 1:
+            streamlit.markdown('[Graphs](#graphs)')
+        if os.path.isfile(f'{chip._getworkdir()}/{chip.design}.png'):
+            streamlit.markdown('[Design Preview](#design_preview)')
+        streamlit.markdown('[File Viewer](#file_viewer)')
+        streamlit.markdown('[Manifest](#manifest)')
+        node_from_flowgraph = show_flowgraph(chip)
+    metrics_dataframe_module(metric_dataframe)
+    selected_node = header_and_select_nodes(metric_dataframe, node_from_flowgraph)
+    step, index = node_to_step_index_map[selected_node]
+    display_file_content, _ = show_files(new_chip, step, index)
+    show_metrics_for_file(new_chip, step, index)
+    node_metric_dataframe(selected_node, metric_dataframe[selected_node].dropna())
+    node_details_dataframe(new_chip, step, index)
+    if len(streamlit.session_state['master chip'].getkeys('history')) > 1:
+        streamlit.header('Graphs', anchor='graphs')
+        graphs_module(metric_dataframe)
+    if os.path.isfile(f'{chip._getworkdir()}/{chip.design}.png'):
+        design_preview_module(chip)
+    file_viewer_module(display_file_content, new_chip, step, index)
+    manifest_module(new_chip, manifest, ui_width)
