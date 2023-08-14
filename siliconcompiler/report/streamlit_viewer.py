@@ -277,7 +277,7 @@ def show_metrics_for_file(chip, step, index):
        len(streamlit.session_state['selected']) == 1:
         file = streamlit.session_state['selected'][0]
         metrics_of_file = report.get_metrics_source(chip, step, index)
-        file = os.path.relpath(file, f"/{step}/{index}")
+        file = os.path.relpath(file, chip._getworkdir(step=step, index=index))
         if file in metrics_of_file:
             metrics = ", ".join(metrics_of_file[file]) + "."
             streamlit.success("This file includes the metrics of " + metrics)
