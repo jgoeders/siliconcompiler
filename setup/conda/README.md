@@ -7,14 +7,14 @@ We would like to fully support this avenue of setting up a development environme
 For now, a few steps are required to create a development environment using Conda:
 
 * Create and activate the Conda environment:
-
-    conda env create -f conda_env.yml
-    conda activate sc_env
+    
+        conda env create -f environment.yml
+        conda activate sc_env
 
 * Clone the siliconcompiler repository, and set the $SCPATH environment variable so that the `third_party/pdks` directory can be found. You may also want to set $SCPATH in your ~/.bashrc file:
 
-    git clone https://github.com/siliconcompiler/siliconcompiler.git
-    export SCPATH=siliconcompiler/siliconcompiler
+        git clone https://github.com/siliconcompiler/siliconcompiler.git
+        export SCPATH=siliconcompiler/siliconcompiler
 
 * Install [KLayout](https://www.klayout.de/build.html) on your system manually.
 
